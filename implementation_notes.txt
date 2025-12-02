@@ -1,0 +1,21 @@
+With this project, there are two main constraints:
+1. Extremely low number of images (3926) for the number of classes (200). This presents a high risk of overfitting.
+2. A limit on computational power.
+
+Compared to the baseline model, the additional attribute data provides an advantage to include specific bird (domain) knowledge.
+
+EXAMPLE:
+With these constraints in mind we opt for:
+1. Average pooling (also, blurring):
+    - Attempt to reduce overfitting by averaging features.
+    - Lower computational complexity by reducing the number of parameters.
+2. Dropout (specifically, cutout or coarse dropout to disable patches/parts of the image):
+    - Reduce overfitting by removing reliance on specific features (turned off sometimes)
+3. Data augmentation:
+    - ...
+...
+
+Possible approaches:
+1. Multi-input model (concatenate image data and attribute data)
+2. Multi-task model (predict class and attribute separately, combine result into final prediction)
+3. Embedding model (Image embeddings of class_x are close to the attribute vector of class_x)
