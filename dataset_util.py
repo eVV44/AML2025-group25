@@ -77,6 +77,45 @@ def train_val_loaders(train_df, img_size=(224,224), batch_size=64, val_size=0.2,
 
     return train_loader, val_loader, train_df_split, val_df_split
 
+def train_val_loaders_with_attributes(train_df, attributes, img_size=(224, 224), batch_size=64,val_size=0.2,
+                                      random_state=42, num_workers=4, use_imagenet_norm=True, augment=True):
+    """
+    Create dataloaders that return (image, label_idx, attribute_vector).
+    """
+    train_df_split, val_df_split = train_test_split(
+        train_df,
+        test_size=val_size,
+        stratify=train_df["label_idx"],
+        random_state=random_state)
+
+    train_transform, val_transform, _ = transform_augment(
+        img_size=img_size,
+        use_imagenet_norm=use_imagenet_norm,
+        augment=augment)
+
+    train_dataset = BirdAttrDataset(
+        train_df_split,
+        attributes=attributes,
+        transform=train_transform)
+
+    val_dataset = BirdAttrDataset(
+        val_df_split,
+        attributes=attributes,
+        transform=val_transform)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers)
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers)
+
+    return train_loader, val_loader, train_df_split, val_df_split
 
 class BirdDataset(Dataset):
     """
@@ -102,6 +141,39 @@ class BirdDataset(Dataset):
         
         return image, label
     
+
+class BirdAttrDataset(Dataset):
+    """
+    Dataset that returns (image, class_label, attribute_vector)
+    for multi-task learning.
+    """
+    def __init__(self, df, attributes, transform=None):
+        self.df = df.reset_index(drop=True)
+        if isinstance(attributes, torch.Tensor):
+            self.attributes = attributes.float()
+        else:
+            self.attributes = torch.tensor(attributes, dtype=torch.float32)
+
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.df)
+    
+    def __getitem__(self, index):
+        row = self.df.iloc[index]
+        img_path = row["image_path"]
+        label_idx = int(row["label_idx"])
+
+        image = Image.open(img_path).convert("RGB")
+
+        if self.transform is not None:
+            image = self.transform(image)
+
+        # attribute vector for this class
+        attr_vec = self.attributes[label_idx]
+
+        return image, label_idx, attr_vec
+
 
 class TestSet():
     def __init__(self, img_transform_size: Tuple[int] = (224,224)):
