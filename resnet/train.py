@@ -31,10 +31,10 @@ config = {
     'label_smoothing': 0.1,
     
     # Attribute heads
-    'use_attr_pred_head': True,
-    'use_attr_emb_head': False,
-    'lambda_attr_pred': 1.0,
-    'lambda_attr_emb': 0.3,
+    'use_attr_pred_head': False,
+    'use_attr_emb_head': True,
+    'lambda_attr_pred': 0.5,
+    'lambda_attr_emb': 0.5,
     'attr_temp': 10.0,
     'attr_mix': 0.3,
     
