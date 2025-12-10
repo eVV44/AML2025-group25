@@ -2,3 +2,10 @@ data/
 .python-version
 pyproject.toml
 __pycache__
+junk/
+submissions/
+birdies.txt
+models
+clip
+.vscode
+best_improved_model.pth
