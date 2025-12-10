@@ -4,6 +4,7 @@ import pandas as pd
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
+import albumentations as A
 
 
 class BirdDataset(Dataset):
@@ -28,7 +29,12 @@ class BirdDataset(Dataset):
         img_path = self.get_full_path(row['image_path'])
         image = Image.open(img_path).convert('RGB')
 
-        if self.transform: image = self.transform(image)
+        if self.transform:
+            if isinstance(self.transform, (A.BasicTransform, A.BaseCompose)):
+                augmented = self.transform(image=np.array(image), image_name=os.path.basename(img_path))
+                image = augmented['image']
+            else: # Backward compatibility with torchvision transforms
+                image = self.transform(image)
 
         if self.has_id: target = int(row['id'])
         else: target = int(row['label']) - 1

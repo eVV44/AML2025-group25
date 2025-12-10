@@ -19,20 +19,20 @@ config = {
     'num_classes': 200,
     'attribute_dim': 312,
     'embedding_dim': 512,
-    'img_size': 244,
+    'img_size': 224,
     
     # Training
-    'batch_size': 48,
+    'batch_size': 64,
     'eval_batch_size': 64,
     'val_split': 0.15,
-    'num_epochs': 500,
-    'learning_rate': 1.5e-3,
+    'num_epochs': 150,
+    'learning_rate': 1e-3,
     'weight_decay': 1e-4,
     'label_smoothing': 0.1,
     
     # Attribute heads
-    'use_attr_pred_head': False,
-    'use_attr_emb_head': True,
+    'use_attr_pred_head': True,
+    'use_attr_emb_head': False,
     'lambda_attr_pred': 0.5,
     'lambda_attr_emb': 0.5,
     'attr_temp': 10.0,

@@ -1,6 +1,12 @@
+from pathlib import Path
 import torchvision.transforms as T
 import albumentations as A
+import numpy as np
+import random
+import cv2
+
 from albumentations.pytorch import ToTensorV2
+from PIL import Image
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -17,11 +23,116 @@ def get_train_transforms_torch(img_size=224):
         T.RandomErasing(p=0.5, scale=(0.02, 0.33), ratio=(0.3, 3.3)) 
     ])
 
+def get_test_transforms_torch(img_size=224):
+    return T.Compose([
+        T.Resize(256),
+        T.CenterCrop(img_size),
+        T.ToTensor(),
+        T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+    ])
+
+class RandomBackgroundSwap(A.ImageOnlyTransform):
+    def __init__(self, bg_root, fg_root, p_remove=0.3, p_swap=0.4, always_apply=False, p=1.0):
+        super().__init__(always_apply, p)
+        self.bg_root = Path(bg_root) if bg_root else None
+        self.bg_paths = self.load_bgs(self.bg_root)
+        self.fg_root = fg_root
+        self.p_remove = p_remove
+        self.p_swap = p_swap  
+
+    def load_bgs(self, root):
+        if not root: return []
+        exts = {".jpg", ".jpeg", ".png"}
+        return [p for p in root.glob("*") if p.suffix.lower() in exts]
+
+    def remove_background(self, name):
+        fg_path = self.fg_root / f"{Path(name).stem}.png"
+        fg = Image.open(fg_path).convert("RGBA")
+        bg = Image.new("RGB", fg.size, (255, 255, 255))
+        bg.paste(fg, mask=fg.split()[-1])
+        return np.array(bg)
+        
+    def swap_background(self, img, name):
+        bg = Image.open(random.choice(self.bg_paths)).convert("RGB")
+        fg_path = self.fg_root / f"{Path(name).stem}.png" 
+        fg = Image.open(fg_path).convert("RGBA")
+        bg = bg.resize((img.shape[1], img.shape[0]))
+        bg.paste(fg, mask=fg.split()[-1])
+        return np.array(bg)
+
+    def apply(self, img, **params):
+        name = params.get("image_name")
+        r = random.random()
+        if r < self.p_remove:
+            return self.remove_background(name)
+        elif r < self.p_remove + self.p_swap and self.bg_paths and self.fg_root and name:
+            return self.swap_background(img, name)
+        return img
+
+class RandomEdgeOverlay(A.ImageOnlyTransform):
+    def __init__(self, edge_root=None, color=(0, 255, 255), alpha=0.8, always_apply=False, p=0.2):
+        super().__init__(always_apply, p)
+        self.edge_root = Path(edge_root) if edge_root else None
+        self.color = color
+        self.alpha = alpha
+    
+    def load_edges(self, name, target_shape):
+        if not (self.edge_root and name): return None
+
+        edge_path = self.edge_root / f"{Path(name).stem}.jpg"
+        if edge_path.exists():
+            edges = np.array(Image.open(edge_path).convert("L"))
+            if edges.shape != target_shape[:2]:
+                edges = cv2.resize(edges, (target_shape[1], target_shape[0]), interpolation=cv2.INTER_NEAREST)
+            return edges
+        return None
+        
+    # Some image magic with help from repos and chatgpt, basically overlays edges onto image
+    def apply(self, img, **params):
+        name = params.get("image_name")
+        edges = self.load_edges(name, img.shape)
+        if edges is None: return img
+
+        # Threshold to drop JPEG noise but keep edge visibility, then thicken/smooth
+        mask = (edges > 40).astype(np.uint8)
+        if mask.max() > 0:
+            mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=1)
+            mask = cv2.GaussianBlur(mask.astype(np.float32), (3, 3), 0)
+        mask = mask[..., None]  
+
+        color_arr = np.array(self.color, dtype=np.float32)
+        img_f = img.astype(np.float32)
+        overlay = img_f * (1 - mask) + color_arr * mask
+        blended = img_f * (1 - self.alpha * mask) + overlay * (self.alpha * mask)
+        blended = np.clip(blended, 0, 255).astype(np.uint8)
+
+        return blended
+
 def get_train_transforms_album(img_size=224):
+    train_root = Path("data/train_images/")
+    bg_root = train_root / "background"
+    fg_root = train_root / "foreground"
+    edge_root = train_root / "edges"
     return A.Compose([
-        A.RandomResizedCrop(height=img_size, width=img_size, scale=(0.6, 1.0), ratio=(0.75, 1.33), p=1.0),
+        RandomBackgroundSwap(bg_root=bg_root, fg_root=fg_root, p_remove=0.3, p_swap=0.5),
+        # RandomEdgeOverlay(edge_root=edge_root, color=(255, 0, 0), alpha=0.8, p=0.1),
+
+        A.RandomResizedCrop(size=(img_size, img_size), scale=(0.6, 1.0), ratio=(0.75, 1.33), p=1.0),
+
+        # A.LongestMaxSize(max_size=img_size),
+        # A.PadIfNeeded(min_height=img_size, min_width=img_size, border_mode=0, fill=(255, 255, 255), fill_mask=0),
+        # A.RandomCrop(height=img_size, width=img_size),
+
         A.HorizontalFlip(p=0.5),
-        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.1, rotate_limit=15, border_mode=0, p=0.7),
+        A.Affine(
+            scale=(0.9, 1.1),
+            translate_percent=(-0.05, 0.05),
+            rotate=(-15, 15),
+            border_mode=0,
+            fit_output=False,
+            keep_ratio=True,
+            p=0.7
+        ),
 
         A.OneOf([
             A.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
@@ -37,15 +148,13 @@ def get_train_transforms_album(img_size=224):
             A.Sharpen(alpha=(0.1, 0.3), lightness=(0.7, 1.3))
         ], p=0.3),
 
-        A.GaussNoise(var_limit=(10.0, 50.0), p=0.2),
+        A.GaussNoise(std_range=(0.01, 0.05), mean_range=(0.0, 0.0), p=0.2),
 
         A.CoarseDropout(
-            max_holes=1,
-            max_height=int(0.2 * img_size),
-            max_width=int(0.2 * img_size),
-            min_height=int(0.05 * img_size),
-            min_width=int(0.05 * img_size),
-            fill_value=0,
+            num_holes_range=(1, 1),
+            hole_height_range=(int(0.05 * img_size), int(0.2 * img_size)),
+            hole_width_range=(int(0.05 * img_size), int(0.2 * img_size)),
+            fill=0,
             p=0.5
         ),
 
@@ -53,18 +162,12 @@ def get_train_transforms_album(img_size=224):
         ToTensorV2()
     ])
 
-def get_test_transforms_torch(img_size=224):
-    return T.Compose([
-        T.Resize(256),
-        T.CenterCrop(img_size),
-        T.ToTensor(),
-        T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
-    ])
-
+# shits broken yo, dont use
 def get_test_transforms_album(img_size=224):
     return A.Compose([
-        A.Resize(256, 256),
-        A.CenterCrop(img_size, img_size),
+        A.LongestMaxSize(max_size=img_size),
+        A.PadIfNeeded(min_height=img_size, min_width=img_size, border_mode=0, fill=(255, 255, 255), fill_mask=0),
+        A.RandomCrop(height=img_size, width=img_size),
         A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
         ToTensorV2()
     ])
@@ -72,5 +175,5 @@ def get_test_transforms_album(img_size=224):
 get_train_transforms = get_train_transforms_torch
 get_test_transforms = get_test_transforms_torch
 
-# get_train_transforms = get_train_transforms_album
+get_train_transforms = get_train_transforms_album
 # get_test_transforms = get_test_transforms_album
