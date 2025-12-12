@@ -6,6 +6,7 @@ from PIL import Image
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
+IMAGENET_DEFAULT_CROP_PCT = 0.875
 
 
 def predict_tta(
@@ -48,6 +49,7 @@ def load_fg_img(
     foreground_dir: str | Path,
 ) -> torch.Tensor:
     foreground_root = Path(foreground_dir)
+    resize_size = int(round(target_size / IMAGENET_DEFAULT_CROP_PCT))
 
     batch = []
     for name in image_names:
@@ -58,7 +60,7 @@ def load_fg_img(
         bg = Image.new("RGB", fg.size, (255, 255, 255))
         bg.paste(fg, mask=fg.split()[-1])
 
-        resized = TVF.resize(bg, target_size, antialias=True)
+        resized = TVF.resize(bg, resize_size, antialias=True)
         cropped = TVF.center_crop(resized, [target_size, target_size])
 
         t = TVF.to_tensor(cropped)
@@ -82,46 +84,27 @@ def predict_logits(
     image_names: list[str] | tuple[str, ...] | None = None,
     foreground_dir: str | Path = "data/test_images/foreground",
 ) -> torch.Tensor:
-    if not use_tta:
-        main_logits = model.predict(images, attr_vectors, attr_temp=attr_temp, attr_mix=attr_mix)
-    else:
-        if tta_crop_size is None:
-            raise ValueError("tta_crop_size must be provided when use_tta=True")
-        main_logits = predict_tta(
-            model,
-            images,
-            attr_vectors,
-            attr_temp=attr_temp,
-            attr_mix=attr_mix,
-            tta_crop_size=tta_crop_size,
-            tta_mode=tta_mode,
-        )
+    image_set = [images]
 
-    if not use_foreground:
-        return main_logits
+    if use_foreground:
+        target_size = int(images.shape[-1])
+        fg_images = load_fg_img(image_names, device=images.device, target_size=target_size, foreground_dir=foreground_dir)
+        image_set.append(fg_images)
+    
+    all_logits = []
+    for img in image_set:
+        if not use_tta:
+            main_logits = model.predict(img, attr_vectors, attr_temp=attr_temp, attr_mix=attr_mix)
+        else:
+            main_logits = predict_tta(
+                model,
+                img,
+                attr_vectors,
+                attr_temp=attr_temp,
+                attr_mix=attr_mix,
+                tta_crop_size=tta_crop_size,
+                tta_mode=tta_mode,
+            )
+        all_logits.append(main_logits)
 
-    target_size = int(images.shape[-1])
-    if images.shape[-2] != images.shape[-1]:
-        raise ValueError(f"Expected square input tensor, got {tuple(images.shape[-2:])}")
-
-    fg_images = load_fg_img(
-        image_names,
-        device=images.device,
-        target_size=target_size,
-        foreground_dir=foreground_dir,
-    )
-
-    if not use_tta:
-        fg_logits = model.predict(fg_images, attr_vectors, attr_temp=attr_temp, attr_mix=attr_mix)
-    else:
-        fg_logits = predict_tta(
-            model,
-            fg_images,
-            attr_vectors,
-            attr_temp=attr_temp,
-            attr_mix=attr_mix,
-            tta_crop_size=tta_crop_size,
-            tta_mode=tta_mode,
-        )
-
-    return 0.5 * (main_logits + fg_logits)
+    return torch.stack(all_logits, dim=0).mean(dim=0)

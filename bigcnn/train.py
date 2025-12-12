@@ -25,12 +25,12 @@ config = {
     'batch_size': 32,
     'eval_batch_size': 32,
     'val_split': 0.15,
-    'num_epochs': 300,
+    'num_epochs': 400,
     'optimizer': 'sgd',  # 'sgd' or 'adamw'
     'learning_rate': 2e-2,
     'weight_decay': 5e-4,
     'label_smoothing': 0.0,
-    'warmup_epochs': 5,
+    'warmup_epochs': 0,
 
     # Mixup / CutMix
     'mixup_alpha': 0.2,
@@ -49,6 +49,10 @@ config = {
     'lambda_attr_emb': 0.4,
     'attr_temp': 10.0,
     'attr_mix': 0.3,
+
+    # Eval
+    # If True: validation averages logits from original + foreground images.
+    'use_foreground_eval': True,
     
     'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     'seed': None,
@@ -58,7 +62,8 @@ config = {
 
     # Resume
     # Set to a checkpoint path (e.g., 'best_bigcnn_model.pth') to continue training.
-    'resume_from': 'best_bigcnn_model.pth',
+    # 'resume_from': 'best_bigcnn_model.pth',
+    'resume_from': None,
 }
 
 def print_config(config):
@@ -115,7 +120,7 @@ def resume_checkpoint(config, model, optimizer, scheduler, device):
     model.load_state_dict(checkpoint['model_state_dict'])
     if checkpoint.get('optimizer_state_dict', None) is not None:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
+    
     start_epoch = int(checkpoint.get('epoch', -1)) + 1
     best_val_acc = float(checkpoint.get('best_val_acc', checkpoint.get('val_acc', 0.0)))
 
@@ -272,6 +277,8 @@ def training_loop(config, model, train_loader, val_loader, optimizer, scheduler,
             model, val_loader, device, attributes=attr_vectors,
             attr_mix=config['attr_mix'],
             attr_temp=config['attr_temp'],
+            use_foreground=bool(config.get('use_foreground_eval', False)),
+            foreground_dir=os.path.join(config['data_root'], 'train_images', 'foreground'),
         )
         
         scheduler.step()

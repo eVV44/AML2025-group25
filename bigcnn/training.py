@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from birdmodels import calc_cosine_similarity
 from mixup_cutmix import apply_mixup_cutmix
+from inference import predict_logits
 
 def train_step(
     model,
@@ -119,6 +120,8 @@ def evaluate_improved(
     attributes=None,
     attr_mix: float = 0.3,
     attr_temp: float = 10.0,
+    use_foreground: bool = False,
+    foreground_dir: str = "data/train_images/foreground",
 ):
     """
     Evaluation with optional attribute-augmented logits (no TTA; training-time eval only).
@@ -146,11 +149,21 @@ def evaluate_improved(
     all_labels = []
     
     with torch.no_grad():
-        for images, labels, _ in dataloader:
+        for images, labels, basenames in dataloader:
             images = images.to(device)
             labels = labels.to(device)
 
-            logits = model.predict(images, attr_vectors, attr_temp=attr_temp, attr_mix=attr_mix)
+            logits = predict_logits(
+                model,
+                images,
+                attr_vectors,
+                attr_temp=attr_temp,
+                attr_mix=attr_mix,
+                use_tta=False,
+                use_foreground=use_foreground,
+                image_names=basenames if use_foreground else None,
+                foreground_dir=foreground_dir,
+            )
             
             predictions = torch.argmax(logits, dim=1)
             
