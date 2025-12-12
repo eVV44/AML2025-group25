@@ -25,16 +25,16 @@ config = {
     'batch_size': 64,
     'eval_batch_size': 64,
     'val_split': 0.15,
-    'num_epochs': 150,
-    'learning_rate': 1e-3,
+    'num_epochs': 300,
+    'learning_rate': 2e-3,
     'weight_decay': 1e-4,
     'label_smoothing': 0.1,
     
     # Attribute heads
-    'use_attr_pred_head': True,
+    'use_attr_pred_head': False,
     'use_attr_emb_head': False,
     'lambda_attr_pred': 0.5,
-    'lambda_attr_emb': 0.5,
+    'lambda_attr_emb': 0.4,
     'attr_temp': 10.0,
     'attr_mix': 0.3,
     
@@ -120,8 +120,9 @@ def setup_model_components(config, device):
     
     criterion = nn.CrossEntropyLoss(label_smoothing=config['label_smoothing'])
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config['learning_rate'], 
-                                  weight_decay=config['weight_decay'])
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config['learning_rate'], weight_decay=config['weight_decay'])
+    # optimizer = torch.optim.SGD(model.parameters(), lr=config['learning_rate'],
+                                # momentum=0.9, weight_decay=config['weight_decay'], nesterov=True)
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 
                                                            T_max=config['num_epochs'], 

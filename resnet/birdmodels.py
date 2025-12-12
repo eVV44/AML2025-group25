@@ -9,6 +9,56 @@ def calc_cosine_similarity(a, b):
     b_norm = F.normalize(b, p=2, dim=1)
     return F.linear(a_norm, b_norm)
 
+# Roughly 6M parameters
+class BiggerCNNEncoder(nn.Module):
+    def __init__(self, embedding_dim: int = 512):
+        super().__init__()
+
+        def conv_block(in_ch, out_ch, stride=1):
+            return nn.Sequential(
+                nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=stride, padding=1, bias=False),
+                nn.BatchNorm2d(out_ch),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1, bias=False),
+                nn.BatchNorm2d(out_ch),
+                nn.ReLU(inplace=True),
+            )
+
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            conv_block(64, 128),
+            nn.MaxPool2d(kernel_size=2),
+
+            conv_block(128, 192),
+            nn.MaxPool2d(kernel_size=2),
+
+            conv_block(192, 256),
+            nn.MaxPool2d(kernel_size=2),
+
+            conv_block(256, 320),
+            nn.MaxPool2d(kernel_size=2),
+
+            conv_block(320, 384),
+            # nn.Dropout(p=0.1),
+            nn.AdaptiveAvgPool2d((1, 1))
+        )
+
+        # self.dropout = nn.Dropout(p=0.2)
+        self.projection = nn.Identity()
+        out_dim = 384
+        if embedding_dim != out_dim:
+            self.projection = nn.Linear(out_dim, embedding_dim)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        # x = self.dropout(x)
+        x = self.projection(x)
+        return x
+
 class ResNetEncoder(nn.Module):
     resnet_dim = {
         "resnet18": 512,
@@ -83,7 +133,9 @@ class BirdClassifier(nn.Module):
         self.use_attr_pred = use_attr_pred
         self.use_attr_emb = use_attr_emb
             
-        self.encoder = ResNetEncoder(embedding_dim)
+        # self.encoder = ResNetEncoder(embedding_dim)
+        # self.encoder = SimpleCNNEncoder(embedding_dim)
+        self.encoder = BiggerCNNEncoder(embedding_dim)
         self.classifier = CosineClassifier(embedding_dim, num_classes)
         
         # Optional auxiliary attribute heads
