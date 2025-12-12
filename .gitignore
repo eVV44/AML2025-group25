@@ -9,4 +9,5 @@ models
 clip
 .vscode
 best_improved_model.pth
-bigcnn
+bigcnn_old
+best_bigcnn_model.pth

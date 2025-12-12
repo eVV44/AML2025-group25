@@ -28,10 +28,11 @@ class BirdDataset(Dataset):
         row = self.df.iloc[idx]
         img_path = self.get_full_path(row['image_path'])
         image = Image.open(img_path).convert('RGB')
+        basename = os.path.basename(img_path)
 
         if self.transform:
             if isinstance(self.transform, (A.BasicTransform, A.BaseCompose)):
-                augmented = self.transform(image=np.array(image), image_name=os.path.basename(img_path))
+                augmented = self.transform(image=np.array(image), image_name=basename)
                 image = augmented['image']
             else: # Backward compatibility with torchvision transforms
                 image = self.transform(image)
@@ -39,4 +40,4 @@ class BirdDataset(Dataset):
         if self.has_id: target = int(row['id'])
         else: target = int(row['label']) - 1
 
-        return image, target
+        return image, target, basename

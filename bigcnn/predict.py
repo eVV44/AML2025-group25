@@ -47,10 +47,10 @@ def generate_predictions(model_path='best_bigcnn_model.pth', output_path=None, u
         'use_attr_pred_head': True,
         'use_attr_emb_head': True,
         'use_tta': use_tta_override,
+        'use_foreground': False,
         'classifier_scale': 30.0,
         'classifier_margin': 0.2,
         'tta_mode': 'ten_crop',
-        'tta_scales': [1.0],
     }
     config = {k: ckpt_config.get(k, v) for k, v in default_config.items()}
     config['use_tta'] = use_tta_override
@@ -110,7 +110,7 @@ def generate_predictions(model_path='best_bigcnn_model.pth', output_path=None, u
     all_ids = []
     
     with torch.no_grad():
-        for images, test_ids in tqdm(test_loader, desc="Predicting"):
+        for images, test_ids, basenames in tqdm(test_loader, desc="Predicting"):
             images = images.to(device)
 
             logits = predict_logits(
@@ -122,7 +122,9 @@ def generate_predictions(model_path='best_bigcnn_model.pth', output_path=None, u
                 use_tta=use_tta,
                 tta_crop_size=config['img_size'],
                 tta_mode=config.get('tta_mode', 'ten_crop'),
-                tta_scales=config.get('tta_scales', [1.0]),
+                use_foreground=bool(config.get('use_foreground', False)),
+                image_names=basenames,
+                foreground_dir=os.path.join(config['data_root'], 'test_images', 'foreground'),
             )
             
             predictions = torch.argmax(logits, dim=1)
