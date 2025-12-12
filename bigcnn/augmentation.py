@@ -126,7 +126,7 @@ def get_train_transforms_album(img_size=224):
     fg_root = train_root / "foreground"
     edge_root = train_root / "edges"
     return A.Compose([
-        RandomBackgroundSwap(bg_root=bg_root, fg_root=fg_root, p_remove=0.3, p_swap=0.2),
+        # RandomBackgroundSwap(bg_root=bg_root, fg_root=fg_root, p_remove=0.3, p_swap=0.2),
         # RandomEdgeOverlay(edge_root=edge_root, color=(255, 0, 0), alpha=0.8, p=0.1),
 
         A.RandomResizedCrop(size=(img_size, img_size), scale=(0.7, 1.0), ratio=(0.75, 1.33), p=1.0),
