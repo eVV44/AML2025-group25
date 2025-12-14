@@ -11,3 +11,6 @@ data
     test_images_sample.csv
     train_images.csv
 ```
+
+Main model is found under BigCNN folder, CLIP training is found in clip_training.py
+Resnet folder is earlier exploration of models. Background removal tools and inpainting utilities are found in old_utilities along with some older exploration of files.
