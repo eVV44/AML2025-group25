@@ -47,7 +47,7 @@ def generate_predictions(model_path='best_bigcnn_model.pth', output_path=None, u
         'use_attr_pred_head': True,
         'use_attr_emb_head': True,
         'use_tta': use_tta_override,
-        'use_foreground': False,
+        'use_foreground': True,
         'classifier_scale': 30.0,
         'classifier_margin': 0.2,
         'tta_mode': 'ten_crop',
@@ -162,5 +162,5 @@ if __name__ == '__main__':
     # Generate predictions with best model
     generate_predictions(
         model_path='best_bigcnn_model.pth',
-        use_tta=True  # Set to True for better accuracy (slower)
-    )
+        use_tta=True  
+        )

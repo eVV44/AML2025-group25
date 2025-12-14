@@ -25,7 +25,7 @@ config = {
     'batch_size': 32,
     'eval_batch_size': 32,
     'val_split': 0.15,
-    'num_epochs': 400,
+    'num_epochs': 300,
     'optimizer': 'sgd',  # 'sgd' or 'adamw'
     'learning_rate': 2e-2,
     'weight_decay': 5e-4,
@@ -44,13 +44,12 @@ config = {
     
     # Attribute heads
     'use_attr_pred_head': False,
-    'use_attr_emb_head': False,
-    'lambda_attr_pred': 0.5,
+    'use_attr_emb_head': True,
+    'lambda_attr_pred': 1,
     'lambda_attr_emb': 0.4,
     'attr_temp': 10.0,
     'attr_mix': 0.3,
 
-    # Eval
     # If True: validation averages logits from original + foreground images.
     'use_foreground_eval': True,
     
@@ -60,9 +59,6 @@ config = {
     # I/O
     'save_path': 'best_bigcnn_model.pth',
 
-    # Resume
-    # Set to a checkpoint path (e.g., 'best_bigcnn_model.pth') to continue training.
-    # 'resume_from': 'best_bigcnn_model.pth',
     'resume_from': None,
 }
 
@@ -88,13 +84,10 @@ def setup_environment(config):
     # Sets seeds and prints configuration for reproducibility
     resume_path = config.get('resume_from')
     if resume_path:
-        try:
-            checkpoint = torch.load(resume_path, map_location="cpu")
-            ckpt_config = checkpoint.get("config", {})
-            if config.get("seed") is None and ckpt_config.get("seed") is not None:
-                config["seed"] = ckpt_config["seed"]
-        except Exception as e:
-            print(f"Warning: failed to read resume checkpoint '{resume_path}': {e}")
+        checkpoint = torch.load(resume_path, map_location="cpu")
+        ckpt_config = checkpoint.get("config", {})
+        if config.get("seed", None) is None:
+            config["seed"] = ckpt_config.get("seed", None)
 
     config['seed'] = config['seed'] or int(time.time())
     
@@ -202,28 +195,24 @@ def setup_model_components(config, device):
         )
     
     warmup_epochs = int(config.get('warmup_epochs', 0) or 0)
+    cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=config['num_epochs'] - warmup_epochs,
+        eta_min=1e-6,
+    )
+
     if warmup_epochs > 0:
         warmup = torch.optim.lr_scheduler.LinearLR(
             optimizer,
             start_factor=0.1,
             total_iters=warmup_epochs,
         )
-        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=max(1, config['num_epochs'] - warmup_epochs),
-            eta_min=1e-6,
-        )
         scheduler = torch.optim.lr_scheduler.SequentialLR(
             optimizer,
             schedulers=[warmup, cosine],
             milestones=[warmup_epochs],
         )
-    else:
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=config['num_epochs'],
-            eta_min=1e-6,
-        )
+    else: scheduler = cosine
     
     return model, optimizer, scheduler, criterion
 

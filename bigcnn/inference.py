@@ -2,12 +2,14 @@ from pathlib import Path
 
 import torch
 from torchvision.transforms import functional as TVF
+from augmentation import get_crop_box
 from PIL import Image
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 IMAGENET_DEFAULT_CROP_PCT = 0.875
-
+FG_CROP_MARGIN = 0.1
+ALPHA_BBOX_THRESH = 25
 
 def predict_tta(
     model,
@@ -30,8 +32,6 @@ def predict_tta(
         views = list(TVF.five_crop(images, [tta_crop_size, tta_crop_size]))
     elif mode == "ten_crop":
         views = list(TVF.ten_crop(images, [tta_crop_size, tta_crop_size]))
-    else:
-        raise ValueError(f"Unknown tta_mode: {tta_mode}")
 
     logits_sum = None
     for view in views:
@@ -57,6 +57,12 @@ def load_fg_img(
         fg_path = foreground_root / f"{stem}.png"
 
         fg = Image.open(fg_path).convert("RGBA")
+        alpha = fg.split()[-1]
+        bbox = alpha.point(lambda v: 255 if v > ALPHA_BBOX_THRESH else 0).getbbox()
+        if bbox is not None:
+            img_w, img_h = fg.size
+            fg = fg.crop(get_crop_box(bbox, img_w, img_h, FG_CROP_MARGIN))
+
         bg = Image.new("RGB", fg.size, (255, 255, 255))
         bg.paste(fg, mask=fg.split()[-1])
 

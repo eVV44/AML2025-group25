@@ -81,6 +81,47 @@ class RandomBackgroundSwap(A.ImageOnlyTransform):
             return self.swap_background(img, name)
         return img
 
+def get_crop_box(bbox, img_w: int, img_h: int, margin: float):
+    left, top, right, bottom = bbox
+    w = max(1, right - left)
+    h = max(1, bottom - top)
+    side = int(max(w, h) * (1.0 + 2.0 * float(margin)))
+    side = max(1, min(side, img_w, img_h))
+
+    cx = (left + right) // 2
+    cy = (top + bottom) // 2
+    left = max(0, min(cx - side // 2, img_w - side))
+    top = max(0, min(cy - side // 2, img_h - side))
+    return left, top, left + side, top + side
+
+class CropToForegroundBox(A.ImageOnlyTransform):
+    def __init__(self, fg_root, margin=0.1, always_apply=False, p=0.5):
+        super().__init__(always_apply, p)
+        self.fg_root = Path(fg_root) if fg_root else None
+        self.margin = float(margin)
+        self.alpha_thresh = 25
+
+    def apply(self, img, **params):
+        name = params.get("image_name")
+        if not (self.fg_root and name):
+            return img
+
+        fg_path = self.fg_root / f"{Path(name).stem}.png"
+        if not fg_path.exists():
+            return img
+
+        try:
+            alpha = Image.open(fg_path).convert("RGBA").split()[-1]
+            bbox = alpha.point(lambda v: 255 if v > self.alpha_thresh else 0).getbbox()
+        except Exception:
+            return img
+        if bbox is None:
+            return img
+
+        img_h, img_w = img.shape[:2]
+        left, top, right, bottom = get_crop_box(bbox, img_w, img_h, self.margin)
+        return img[top:bottom, left:right]
+
 class RandomEdgeOverlay(A.ImageOnlyTransform):
     def __init__(self, edge_root=None, color=(0, 255, 255), alpha=0.8, always_apply=False, p=0.2):
         super().__init__(always_apply, p)
@@ -127,9 +168,10 @@ def get_train_transforms_album(img_size=224):
     edge_root = train_root / "edges"
     return A.Compose([
         RandomBackgroundSwap(bg_root=bg_root, fg_root=fg_root, p_remove=0.4, p_swap=0.2),
+        CropToForegroundBox(fg_root=fg_root, margin=0.1, p=0.8),
         # RandomEdgeOverlay(edge_root=edge_root, color=(255, 0, 0), alpha=0.8, p=0.1),
 
-        A.RandomResizedCrop(size=(img_size, img_size), scale=(0.7, 1.0), ratio=(0.75, 1.33), p=1.0),
+        A.RandomResizedCrop(size=(img_size, img_size), scale=(0.8, 1.0), ratio=(0.75, 1.33), p=1.0),
 
         # A.LongestMaxSize(max_size=img_size),
         # A.PadIfNeeded(min_height=img_size, min_width=img_size, border_mode=0, fill=(255, 255, 255), fill_mask=0),
@@ -150,7 +192,7 @@ def get_train_transforms_album(img_size=224):
             A.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
             A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3),
             A.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=20, val_shift_limit=10),
-            A.ToGray()
+            A.ToGray(p=0.2)
         ], p=0.6),
 
         A.OneOf([
@@ -167,7 +209,7 @@ def get_train_transforms_album(img_size=224):
             hole_height_range=(int(0.05 * img_size), int(0.2 * img_size)),
             hole_width_range=(int(0.05 * img_size), int(0.2 * img_size)),
             fill=0,
-            p=0.2
+            p=0.1
         ),
 
         A.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
